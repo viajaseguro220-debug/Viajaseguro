@@ -5,3 +5,5 @@ coverage
 .env
 .env.local
 *.log
+apps/api/prisma/*.db-shm
+apps/api/prisma/*.db-wal
