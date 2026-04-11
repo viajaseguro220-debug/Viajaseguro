@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import Link from 'next/link';
 import { ChangeEvent, useEffect, useMemo, useState } from 'react';
@@ -18,6 +18,7 @@ export default function ReservationTicketPage() {
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const mpPaymentLink = process.env.NEXT_PUBLIC_MP_PAYMENT_LINK?.trim() ?? '';
 
   async function loadTicket() {
     const token = getToken();
@@ -165,6 +166,19 @@ export default function ReservationTicketPage() {
               {reservation.payment.paymentProcessingMessage && (
                 <p className="rounded-md bg-slate-100 p-3 text-sm text-slate-700">{reservation.payment.paymentProcessingMessage}</p>
               )}
+              <div className="space-y-2 rounded-md border border-sky-100 bg-sky-50 p-3 text-sm text-sky-900">
+                <p className="font-semibold text-sky-900">Pasos para completar tu pago</p>
+                <ol className="list-decimal space-y-1 pl-5 text-xs text-sky-900">
+                  <li>Entra al link de pago de Mercado Pago.</li>
+                  <li>Escribe el monto exacto de tu reserva: {formatCurrency(reservation.payment.amount)}.</li>
+                  <li>Sube tu comprobante y espera la validacion de soporte/admin.</li>
+                </ol>
+                {mpPaymentLink && (
+                  <a href={mpPaymentLink} target="_blank" rel="noreferrer" className="inline-block rounded-md border border-sky-300 bg-white px-3 py-2 text-xs font-medium text-sky-800">
+                    Ir al link de pago
+                  </a>
+                )}
+              </div>
 
               {reservation.payment.paymentInstructions && (
                 <div>

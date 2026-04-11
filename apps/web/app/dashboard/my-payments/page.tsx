@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import Link from 'next/link';
 import { ChangeEvent, useEffect, useState } from 'react';
@@ -14,6 +14,7 @@ export default function MyPaymentsPage() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [busyReservationId, setBusyReservationId] = useState<string | null>(null);
+  const mpPaymentLink = process.env.NEXT_PUBLIC_MP_PAYMENT_LINK?.trim() ?? '';
 
   async function loadPayments() {
     const token = getToken();
@@ -120,6 +121,19 @@ export default function MyPaymentsPage() {
                 {payment.paymentBusinessAccount && <p className="text-sm text-slate-700">Cuenta o CLABE del negocio: {payment.paymentBusinessAccount}</p>}
                 <p className="text-sm text-slate-700">Referencia: {payment.paymentReference ?? 'VS-RESERVA'}</p>
                 {payment.paymentProcessingMessage && <p className="rounded-md bg-slate-100 p-3 text-sm text-slate-700">{payment.paymentProcessingMessage}</p>}
+                <div className="space-y-2 rounded-md border border-sky-100 bg-sky-50 p-3 text-sm text-sky-900">
+                  <p className="font-semibold">Pasos para completar tu pago</p>
+                  <ol className="list-decimal space-y-1 pl-5 text-xs text-sky-900">
+                    <li>Entra al enlace de pago de Mercado Pago.</li>
+                    <li>Ingresa el monto exacto que te muestra la app: {formatCurrency(payment.amount)}.</li>
+                    <li>Sube tu comprobante y espera la validacion de soporte/admin.</li>
+                  </ol>
+                  {mpPaymentLink && (
+                    <a href={mpPaymentLink} target="_blank" rel="noreferrer" className="inline-block rounded-md border border-sky-300 bg-white px-3 py-2 text-xs font-medium text-sky-800">
+                      Ir al link de pago
+                    </a>
+                  )}
+                </div>
                 <p className="whitespace-pre-line text-xs text-slate-600">{payment.paymentInstructions}</p>
                 <p className="rounded-md bg-slate-100 p-3 text-sm text-slate-700">{getPaymentFlowMessage(payment.status)}</p>
                 <p className="rounded-md bg-brand-50 p-3 text-xs text-brand-800">{PAYMENT_RETENTION_NOTICE}</p>
