@@ -1,4 +1,4 @@
-﻿import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { randomBytes, randomInt } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { RouteOffersService } from '../route-offers/route-offers.service';
@@ -64,6 +64,9 @@ const TRIP_STATUS = {
   FINISHED: 'finished',
   CANCELLED: 'cancelled'
 } as const;
+
+const WEEKLY_RESERVATION_MIN_DAYS = 5;
+const WEEKLY_PROMO_FACTOR = 0.9334;
 
 @Injectable()
 export class ReservationsService {
@@ -233,7 +236,9 @@ export class ReservationsService {
     );
 
     const totalDays = mapped.length;
-    const totalAmount = mapped.reduce((sum, reservation) => sum + reservation.totalAmount, 0);
+    const grossAmount = mapped.reduce((sum, reservation) => sum + reservation.totalAmount, 0);
+    const weeklyDiscountApplied = totalDays >= WEEKLY_RESERVATION_MIN_DAYS;
+    const finalAmount = weeklyDiscountApplied ? grossAmount * WEEKLY_PROMO_FACTOR : grossAmount;
 
     return {
       routeId: offer.routeId,
@@ -241,9 +246,14 @@ export class ReservationsService {
       totalDays,
       totalSeats: normalizedTotalSeats,
       selectedWeekdays,
-      totalAmount: this.roundCurrency(totalAmount),
+      grossAmount: this.roundCurrency(grossAmount),
+      totalAmount: this.roundCurrency(finalAmount),
+      finalAmount: this.roundCurrency(finalAmount),
+      weeklyDiscountApplied,
       reservations: mapped,
-      message: `Reserva creada para ${totalDays} dia(s) de la semana.`
+      message: weeklyDiscountApplied
+        ? 'Reserva semanal creada para ' + totalDays + ' dia(s). Se aplico un beneficio especial en tu total final.'
+        : 'Reserva creada para ' + totalDays + ' dia(s) de la semana.'
     };
   }
 
@@ -285,12 +295,8 @@ export class ReservationsService {
       orderBy: [{ createdAt: 'desc' }]
     })) as ReservationRecord[];
 
-    return Promise.all(
-      reservations.map(async (reservation) => {
-        const remainingSeats = await this.getRemainingSeats(reservation.tripId);
-        return this.mapReservation(reservation, remainingSeats);
-      })
-    );
+    const remainingSeatsMap = await this.getRemainingSeatsMapForTrips(reservations.map((reservation) => reservation.tripId));
+    return reservations.map((reservation) => this.mapReservation(reservation, remainingSeatsMap.get(reservation.tripId) ?? 0));
   }
 
   async findAllForAdmin() {
@@ -320,12 +326,8 @@ export class ReservationsService {
       orderBy: [{ createdAt: 'desc' }]
     })) as ReservationRecord[];
 
-    return Promise.all(
-      reservations.map(async (reservation) => {
-        const remainingSeats = await this.getRemainingSeats(reservation.tripId);
-        return this.mapReservation(reservation, remainingSeats);
-      })
-    );
+    const remainingSeatsMap = await this.getRemainingSeatsMapForTrips(reservations.map((reservation) => reservation.tripId));
+    return reservations.map((reservation) => this.mapReservation(reservation, remainingSeatsMap.get(reservation.tripId) ?? 0));
   }
 
   async findByIdForAdmin(reservationId: string) {
@@ -821,6 +823,60 @@ export class ReservationsService {
     return reservations.reduce((sum, item) => sum + item.totalSeats, 0);
   }
 
+  private async getRemainingSeatsMapForTrips(tripIds: string[]) {
+    const uniqueTripIds = Array.from(new Set(tripIds.filter(Boolean)));
+    const map = new Map<string, number>();
+
+    if (uniqueTripIds.length === 0) {
+      return map;
+    }
+
+    const trips = (await this.tripDelegate().findMany({
+      where: {
+        id: {
+          in: uniqueTripIds
+        }
+      },
+      select: {
+        id: true,
+        availableSeatsSnapshot: true
+      }
+    })) as Array<{ id: string; availableSeatsSnapshot: number }>;
+
+    const activeStatuses = [
+      RESERVATION_STATUS.CONFIRMED,
+      RESERVATION_STATUS.PAID,
+      RESERVATION_STATUS.BOARDED,
+      RESERVATION_STATUS.COMPLETED
+    ];
+
+    const grouped = (await this.reservationDelegate().groupBy({
+      by: ['tripId'],
+      where: {
+        tripId: {
+          in: uniqueTripIds
+        },
+        status: {
+          in: activeStatuses
+        }
+      },
+      _sum: {
+        totalSeats: true
+      }
+    })) as Array<{ tripId: string; _sum: { totalSeats: number | null } }>;
+
+    const reservedByTrip = new Map<string, number>();
+    for (const row of grouped) {
+      reservedByTrip.set(row.tripId, row._sum.totalSeats ?? 0);
+    }
+
+    for (const trip of trips) {
+      const reservedSeats = reservedByTrip.get(trip.id) ?? 0;
+      map.set(trip.id, Math.max(0, trip.availableSeatsSnapshot - reservedSeats));
+    }
+
+    return map;
+  }
   private async getRemainingSeats(tripId: string) {
     const trip = (await this.tripDelegate().findUnique({
       where: { id: tripId },
@@ -1156,22 +1212,4 @@ export class ReservationsService {
     };
   }
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 

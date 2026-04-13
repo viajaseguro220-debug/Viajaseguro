@@ -1,4 +1,4 @@
-﻿import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { VehiclesService } from '../vehicles/vehicles.service';
 import { AvailableTripsQueryDto } from './dto/available-trips-query.dto';
@@ -217,30 +217,29 @@ export class TripsService {
       orderBy: [{ tripDate: 'asc' }, { createdAt: 'asc' }]
     })) as TripRecord[];
 
-    const enriched = await Promise.all(
-      trips.map(async (trip) => {
-        const remainingSeats = await this.getRemainingSeats(trip.id, trip.availableSeatsSnapshot);
-        const nearDistanceKm =
-          hasReferencePoint && this.hasValidCoordinates(trip.route?.originLat, trip.route?.originLng)
-            ? Number(
-                this.haversineDistanceKm(
-                  query.lat as number,
-                  query.lng as number,
-                  trip.route?.originLat as number,
-                  trip.route?.originLng as number
-                ).toFixed(2)
-              )
-            : null;
+    const remainingSeatsMap = await this.getRemainingSeatsMapForTrips(trips);
+    const enriched = trips.map((trip) => {
+      const remainingSeats = remainingSeatsMap.get(trip.id) ?? trip.availableSeatsSnapshot;
+      const nearDistanceKm =
+        hasReferencePoint && this.hasValidCoordinates(trip.route?.originLat, trip.route?.originLng)
+          ? Number(
+              this.haversineDistanceKm(
+                query.lat as number,
+                query.lng as number,
+                trip.route?.originLat as number,
+                trip.route?.originLng as number
+              ).toFixed(2)
+            )
+          : null;
 
-        return {
-          ...this.mapTrip(trip),
-          remainingSeats,
-          nearbyDistanceKm: nearDistanceKm,
-          isNearUser: typeof nearDistanceKm === 'number' ? nearDistanceKm <= 15 : false,
-          isReservable: remainingSeats > 0
-        };
-      })
-    );
+      return {
+        ...this.mapTrip(trip),
+        remainingSeats,
+        nearbyDistanceKm: nearDistanceKm,
+        isNearUser: typeof nearDistanceKm === 'number' ? nearDistanceKm <= 15 : false,
+        isReservable: remainingSeats > 0
+      };
+    });
 
     return enriched
       .filter((trip) => trip.remainingSeats > 0)
@@ -414,6 +413,42 @@ export class TripsService {
 
   private async ensureVerifiedDriver(userId: string) {
     await this.vehiclesService.ensureDriverCanOperate(userId);
+  }
+  private async getRemainingSeatsMapForTrips(trips: TripRecord[]) {
+    const map = new Map<string, number>();
+    const uniqueTripIds = Array.from(new Set(trips.map((trip) => trip.id)));
+
+    if (uniqueTripIds.length === 0) {
+      return map;
+    }
+
+    const activeReservationStatuses = ['confirmed', 'paid', 'boarded', 'completed'];
+    const grouped = (await this.reservationDelegate().groupBy({
+      by: ['tripId'],
+      where: {
+        tripId: {
+          in: uniqueTripIds
+        },
+        status: {
+          in: activeReservationStatuses
+        }
+      },
+      _sum: {
+        totalSeats: true
+      }
+    })) as Array<{ tripId: string; _sum: { totalSeats: number | null } }>;
+
+    const reservedMap = new Map<string, number>();
+    for (const row of grouped) {
+      reservedMap.set(row.tripId, row._sum.totalSeats ?? 0);
+    }
+
+    for (const trip of trips) {
+      const reservedSeats = reservedMap.get(trip.id) ?? 0;
+      map.set(trip.id, Math.max(0, trip.availableSeatsSnapshot - reservedSeats));
+    }
+
+    return map;
   }
 
   private async getRemainingSeats(tripId: string, availableSeatsSnapshot: number) {

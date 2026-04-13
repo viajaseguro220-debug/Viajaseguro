@@ -1,4 +1,4 @@
-﻿import { INestApplication, Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { INestApplication, Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { PrismaClient } from '@prisma/client';
 
 @Injectable()
@@ -35,7 +35,9 @@ export class PrismaService extends PrismaClient implements OnModuleInit {
   async onModuleInit() {
     this.logger.log(`Prisma conectado usando datasource: ${this.resolvedDatasourceUrl}`);
     await this.$connect();
-    await this.configureSqliteForLocalStability();
+    if (this.resolvedDatasourceUrl.startsWith('file:')) {
+      await this.configureSqliteForLocalStability();
+    }
   }
 
   async enableShutdownHooks(app: INestApplication) {
