@@ -19,15 +19,13 @@ function resolvePrimaryApiUrl() {
 }
 
 function resolveFallbackApiUrl(primaryApiUrl: string) {
+  const isLocalLike = (url: string) => /localhost|127\\.0\\.0\\.1|::1/i.test(url);
+
   if (EXPLICIT_API_URL) {
-    return null;
+    return isLocalLike(primaryApiUrl) ? REMOTE_API_URL : null;
   }
 
-  if (primaryApiUrl === LOCAL_API_URL) {
-    return REMOTE_API_URL;
-  }
-
-  return null;
+  return isLocalLike(primaryApiUrl) ? REMOTE_API_URL : null;
 }
 
 export const API_URL = resolvePrimaryApiUrl();
