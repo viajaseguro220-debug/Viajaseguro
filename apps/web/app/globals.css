@@ -12,6 +12,8 @@
   --vs-teal-500: #15b8a6;
   --vs-teal-600: #0f9a8b;
   --vs-white: #ffffff;
+  --vs-b44-blue: #2f6df8;
+  --vs-b44-indigo: #5046f0;
 }
 
 html {
@@ -97,5 +99,21 @@ body {
 
   .vs-grid-hero {
     @apply grid gap-6 lg:grid-cols-[1.1fr_0.9fr];
+  }
+
+  .vs-panel-theme {
+    @apply rounded-[26px] border border-slate-200/70 bg-gradient-to-b from-slate-100 to-slate-50 p-4 shadow-[0_20px_50px_-34px_rgba(15,23,42,0.35)] md:p-5;
+  }
+
+  .vs-panel-theme > * {
+    @apply min-w-0;
+  }
+
+  .vs-panel-theme .vs-panel-card {
+    @apply rounded-[22px] border border-slate-200 bg-white shadow-[0_16px_40px_-30px_rgba(15,23,42,0.35)];
+  }
+
+  .vs-panel-theme .vs-b44-cta {
+    @apply inline-flex items-center justify-center rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-[0_14px_30px_-18px_rgba(79,70,229,0.9)] transition hover:opacity-95;
   }
 }
