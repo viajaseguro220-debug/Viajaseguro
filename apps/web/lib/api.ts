@@ -1,6 +1,7 @@
 const EXPLICIT_API_URL = process.env.NEXT_PUBLIC_API_URL?.trim();
 const LOCAL_API_URL = 'http://localhost:4000/api';
 const REMOTE_API_URL = 'https://viaja-seguro-mvp.onrender.com/api';
+const PROXY_API_URL = '/api/proxy';
 
 function isLocalBrowser() {
   if (typeof window === 'undefined') {
@@ -8,6 +9,10 @@ function isLocalBrowser() {
   }
 
   return ['localhost', '127.0.0.1', '::1'].includes(window.location.hostname);
+}
+
+function isLocalLike(url: string) {
+  return /localhost|127\.0\.0\.1|::1/i.test(url);
 }
 
 function resolvePrimaryApiUrl() {
@@ -19,17 +24,15 @@ function resolvePrimaryApiUrl() {
 }
 
 function resolveFallbackApiUrl(primaryApiUrl: string) {
-  const isLocalLike = (url: string) => /localhost|127\\.0\\.0\\.1|::1/i.test(url);
-
-  if (EXPLICIT_API_URL) {
-    return isLocalLike(primaryApiUrl) ? REMOTE_API_URL : null;
+  if (isLocalLike(primaryApiUrl)) {
+    return REMOTE_API_URL;
   }
 
-  return isLocalLike(primaryApiUrl) ? REMOTE_API_URL : null;
+  return null;
 }
 
 export const API_URL = resolvePrimaryApiUrl();
-export const API_ORIGIN = API_URL.replace(/\/api\/?$/, '');
+export const API_ORIGIN = API_URL.startsWith('/') ? '' : API_URL.replace(/\/api\/?$/, '');
 
 const SESSION_TOKEN_KEY = 'vs_token';
 const SESSION_ROLE_KEY = 'vs_role';
@@ -84,6 +87,18 @@ function getApiErrorMessage(body: unknown) {
   return maybeBody.message ?? 'Ocurrio un error al conectar con la API';
 }
 
+function parseBody(text: string) {
+  if (!text) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(text);
+  } catch {
+    return { message: text };
+  }
+}
+
 export async function apiRequest<T>(path: string, options?: RequestInit): Promise<T> {
   const isFormData = typeof FormData !== 'undefined' && options?.body instanceof FormData;
   const headers = new Headers(options?.headers ?? {});
@@ -99,7 +114,7 @@ export async function apiRequest<T>(path: string, options?: RequestInit): Promis
     });
 
     const text = await response.text();
-    const body = text ? JSON.parse(text) : null;
+    const body = parseBody(text);
 
     if (!response.ok) {
       throw new Error(getApiErrorMessage(body));
@@ -113,17 +128,19 @@ export async function apiRequest<T>(path: string, options?: RequestInit): Promis
     return await performRequest(primaryApiUrl);
   } catch {
     const fallbackApiUrl = resolveFallbackApiUrl(primaryApiUrl);
-    if (!fallbackApiUrl) {
-      throw new Error(
-        `No se pudo conectar con el servidor API (${primaryApiUrl}). Verifica que la API este activa y CORS_ORIGIN permita este origen.`
-      );
+    if (fallbackApiUrl) {
+      try {
+        return await performRequest(fallbackApiUrl);
+      } catch {
+        // continue to proxy fallback
+      }
     }
 
     try {
-      return await performRequest(fallbackApiUrl);
+      return await performRequest(PROXY_API_URL);
     } catch {
       throw new Error(
-        `No se pudo conectar con el servidor API (${primaryApiUrl}) ni con el respaldo (${fallbackApiUrl}). Verifica NEXT_PUBLIC_API_URL y CORS_ORIGIN.`
+        `No se pudo conectar con el servidor API (${primaryApiUrl}) ni con el respaldo (${fallbackApiUrl ?? PROXY_API_URL}). Verifica NEXT_PUBLIC_API_URL y CORS_ORIGIN.`
       );
     }
   }
@@ -135,6 +152,10 @@ export function buildApiAssetUrl(path: string | null | undefined) {
   }
 
   if (path.startsWith('http://') || path.startsWith('https://')) {
+    return path;
+  }
+
+  if (!API_ORIGIN) {
     return path;
   }
 
